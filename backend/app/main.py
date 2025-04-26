@@ -14,7 +14,7 @@ class CriminalInvestigationSystem:
         self.gesture_analyzer = GestureAnalyzer()
 
         # analysis settings
-        self.emotion_interval = 1.0 # seconds between emotion analysis updates
+        self.emotion_interval = 1.0  # seconds between emotion analysis updates
         self.last_emotion_time = 0
         self.emotion = None
         self.emotion_scores = {}
@@ -82,26 +82,27 @@ class CriminalInvestigationSystem:
 
             # if emotion is detected, overlay it prominently on frame
             if self.emotion and self.emotion != "Unknown":
-                # display emotion name in large text
-                cv2.putText(display_frame, f"Emotion: {self.emotion}",
+                # display dominant emotion in large text
+                cv2.putText(display_frame, f"Dominant Emotion: {self.emotion} ({self.emotion_scores[self.emotion]:.1f}%)",
                             (int(screen_width * 0.1), int(screen_height * 0.1)),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 255, 0), 3)
-                
-                # display confidence percentage for the dominant emotion
-                if self.emotion in self.emotion_scores:
-                    confidence = self.emotion_scores[self.emotion]
-                    cv2.putText(display_frame, f"Confidence: {confidence:.1f}%",
-                                (int(screen_width * 0.1), int(screen_height * 0.17)),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 255, 0), 3)
+                            cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 3)
+
+                # display all emotions with their percentages
+                y_offset_emotions = int(screen_height * 0.2)  # start below the dominant emotion
+                for emotion, score in self.emotion_scores.items():
+                    cv2.putText(display_frame, f"{emotion.capitalize()}: {score:.1f}%",
+                                (int(screen_width * 0.1), y_offset_emotions),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (10, 10, 10), 2)
+                    y_offset_emotions += 30  # increment for the next emotion
 
             # display gestures
             if gestures:
-                y_offset = int(screen_height * 0.3)
+                y_offset_gestures = y_offset_emotions + 50  # start below the emotions section
                 for gesture in gestures:
                     cv2.putText(display_frame, f"Gesture: {gesture}",
-                                (int(screen_width * 0.1), y_offset),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
-                    y_offset += 30
+                                (int(screen_width * 0.1), y_offset_gestures),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (50, 50, 50), 1)
+                    y_offset_gestures += 30  # increment for the next gesture
 
             # display frame
             cv2.imshow("Investigation Analysis", display_frame)
