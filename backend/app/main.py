@@ -1,36 +1,31 @@
 import cv2
 import time
 import numpy as np
-import json
 import os
 from datetime import datetime
 
-# import from modules
-from emotion_analyzer import EmotionAnalyzer
-from face_analyzer import FaceAnalyzer
-from gesture_analyzer import GestureAnalyzer 
+# import from modules - use absolute imports
+from app.analyzers import EmotionAnalyzer, FaceAnalyzer, GestureAnalyzer
+from app.managers import ReportManager, SessionManager
 
 class CriminalInvestigationSystem:
     def __init__(self):
         self.emotion_analyzer = EmotionAnalyzer()
         self.face_analyzer = FaceAnalyzer()
         self.gesture_analyzer = GestureAnalyzer()
+        self.session_manager = SessionManager()
+        self.report_manager = ReportManager()
 
         # analysis settings
         self.emotion_interval = 1.0  # seconds between emotion analysis updates
         self.last_emotion_time = 0
         self.emotion = None
         self.emotion_scores = {}
-        
-        # create data directory if it doesn't exist
-        self.data_dir = "session_data"
-        if not os.path.exists(self.data_dir):
-            os.makedirs(self.data_dir)
 
     def run_menu(self):
-        """display main menu and handle user input."""
+        """Display main menu and handle user input."""
         while True:
-            print("1: Start Analysis\n2: View Past Sessions\n3: Exit")
+            print("1: Start Analysis\n2: View Past Sessions\n3: View Past Reports\n4: Exit")
             key = input("Select an option: ")
 
             if key == '1':
@@ -40,31 +35,16 @@ class CriminalInvestigationSystem:
             elif key == '2':
                 self.view_past_sessions()
             elif key == '3':
+                self.report_manager.view_past_reports()
+            elif key == '4':
                 break
             else:
                 continue
 
     def start_analysis(self):
-        """start investigation analysis."""
-        # create session file at start
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        session_file = os.path.join(self.data_dir, f"session_{timestamp}.json")
-        
-        # initialize session data
-        session_data = {
-            "start_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "end_time": None,
-            "duration": None,
-            "frames": []  # will store frames saved when 's' is pressed
-        }
-        
-        # write initial session file
-        with open(session_file, 'w') as file:
-            json.dump(session_data, file, indent=4)
-        
-        session_start_time = time.time()
-        print(f"Session started at: {session_data['start_time']}")
-        print(f"Session file created: {session_file}")
+        """Start investigation analysis."""
+        # create a new session
+        session_file, session_start_time = self.session_manager.create_session()
 
         # start video capture
         cap = cv2.VideoCapture(0)
@@ -81,7 +61,7 @@ class CriminalInvestigationSystem:
         cv2.setWindowProperty("Investigation Analysis", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
 
         while running:
-            # capture frame
+            # Capture frame
             ret, frame = cap.read()
             if not ret:
                 print("Can't receive frame. Exiting...")
@@ -144,17 +124,26 @@ class CriminalInvestigationSystem:
 
             # handle key presses
             key = cv2.waitKey(1) & 0xFF
-            if key == ord('q'):  # quit analysis
+            if key == ord('q'):  # Quit analysis
                 running = False
-                self.finalize_session(session_file, session_start_time)
-            elif key == ord('r'):  # return to menu
+                # release resources immediately before finalizing
+                cap.release()
+                cv2.destroyAllWindows()
+                # then finalize the session
+                self.session_manager.finalize_session(session_file, session_start_time)
+                break  # exit the loop immediately
+            elif key == ord('r'):  # Return to menu
                 return_to_menu = True
                 running = False
-                self.finalize_session(session_file, session_start_time)
-            elif key == ord('s'):  # save current frame data
-                frames_saved += 1
-                self.save_frame_data(session_file, current_time - session_start_time, 
-                                    self.emotion, self.emotion_scores, gestures)
+                # release resources immediately before finalizing
+                cap.release()
+                cv2.destroyAllWindows()
+                self.session_manager.finalize_session(session_file, session_start_time)
+                break  # exit the loop immediately
+            elif key == ord('s'):  # Save current frame data
+                elapsed_time = current_time - session_start_time
+                frames_saved = self.session_manager.save_frame_data(
+                    session_file, elapsed_time, self.emotion, self.emotion_scores, gestures)
             elif key == ord('f'):  # toggle fullscreen
                 current_prop = cv2.getWindowProperty("Investigation Analysis", cv2.WND_PROP_FULLSCREEN)
                 new_prop = cv2.WINDOW_NORMAL if current_prop == cv2.WINDOW_FULLSCREEN else cv2.WINDOW_FULLSCREEN
@@ -164,69 +153,9 @@ class CriminalInvestigationSystem:
         cv2.destroyAllWindows()
         return return_to_menu
     
-    def save_frame_data(self, session_file, timestamp, emotion, emotion_scores, gestures):
-        """Save current frame data to the session file"""
-        # read current session file
-        with open(session_file, 'r') as file:
-            session_data = json.load(file)
-        
-        # format timestamp for display
-        time_str = f"{int(timestamp // 60):02d}:{int(timestamp % 60):02d}"
-        
-        # create frame data with current information
-        frame_data = {
-            "timestamp": timestamp,
-            "time_str": time_str,
-            "emotion": None,
-            "gestures": None
-        }
-        
-        # add emotion data if available
-        if emotion and emotion != "Unknown":
-            frame_data["emotion"] = {
-                "dominant": emotion,
-                "scores": emotion_scores
-            }
-        
-        # add gesture data
-        if gestures:
-            frame_data["gestures"] = gestures
-        
-        # append this frame to the saved frames
-        session_data["frames"].append(frame_data)
-        
-        # write updated data back to file
-        with open(session_file, 'w') as file:
-            json.dump(session_data, file, indent=4)
-        
-        print(f"Saved frame at {time_str} to {session_file}")
-    
-    def finalize_session(self, session_file, start_time):
-        """Update the session file with end time and duration"""
-        if not os.path.exists(session_file):
-            return
-            
-        end_time = time.time()
-        duration = end_time - start_time
-        
-        # read current session file
-        with open(session_file, 'r') as file:
-            session_data = json.load(file)
-        
-        # update session data
-        session_data["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        session_data["duration"] = duration
-        
-        # write updated data back to file
-        with open(session_file, 'w') as file:
-            json.dump(session_data, file, indent=4)
-            
-        print(f"Session completed and saved to {session_file}")
-        print(f"Session duration: {int(duration // 60):02d}:{int(duration % 60):02d}")
-    
     def view_past_sessions(self):
         """View list of past sessions and allow user to select one to view details"""
-        session_files = [f for f in os.listdir(self.data_dir) if f.endswith('.json')]
+        session_files = self.session_manager.list_sessions()
         
         if not session_files:
             print("No saved sessions found.")
@@ -244,53 +173,13 @@ class CriminalInvestigationSystem:
         try:
             index = int(choice) - 1
             if 0 <= index < len(session_files):
-                self.display_session_data(session_files[index])
+                self.session_manager.display_session_data(session_files[index])
             else:
                 print("Invalid session number.")
         except ValueError:
             print("Invalid input.")
         
         input("Press Enter to continue...")
-    
-    def display_session_data(self, filename):
-        """Display detailed session data"""
-        filepath = os.path.join(self.data_dir, filename)
-        
-        try:
-            with open(filepath, 'r') as file:
-                session_data = json.load(file)
-                
-            print("\n" + "="*50)
-            print(f"Session Data: {filename}")
-            print("="*50)
-            print(f"Start Time: {session_data['start_time']}")
-            print(f"End Time: {session_data.get('end_time', 'Not finished')}")
-            
-            if session_data.get('duration'):
-                duration = session_data['duration']
-                minutes = int(duration // 60)
-                seconds = int(duration % 60)
-                print(f"Duration: {minutes:02d}:{seconds:02d}")
-            
-            # display saved frames
-            frames = session_data.get('frames', [])
-            print(f"\nTotal Frames Saved: {len(frames)}")
-            
-            for i, frame in enumerate(frames):
-                print(f"\nFrame {i+1} - Time: {frame.get('time_str', 'N/A')}")
-                
-                # display emotion data
-                if frame.get('emotion'):
-                    print(f"  Emotion: {frame['emotion']['dominant']} "
-                          f"({frame['emotion']['scores'][frame['emotion']['dominant']]:.1f}%)")
-                    
-                # display gesture data
-                if frame.get('gestures'):
-                    gesture_str = ", ".join(str(g) for g in frame['gestures'])
-                    print(f"  Gestures: {gesture_str}")
-                
-        except (FileNotFoundError, json.JSONDecodeError) as e:
-            print(f"Error reading session file: {e}")
 
 if __name__ == "__main__":
     system = CriminalInvestigationSystem()

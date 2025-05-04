@@ -12,3 +12,6 @@ venv/
 # Ignore OS-specific files
 .DS_Store
 Thumbs.db
+
+# Ignore environment variables
+backend/.env

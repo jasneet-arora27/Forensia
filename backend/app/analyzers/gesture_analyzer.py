@@ -16,14 +16,14 @@ class GestureAnalyzer:
         gestures = []
         if results.multi_hand_landmarks:
             for hand_landmarks in results.multi_hand_landmarks:
-                # Extract hand landmarks
+                # extract hand landmarks
                 landmarks = [{"x": lm.x, "y": lm.y, "z": lm.z} for lm in hand_landmarks.landmark]
                 gestures.append({"landmarks": landmarks})
 
-                # Draw hand landmarks on the frame
+                # draw hand landmarks on the frame
                 self.mp_drawing.draw_landmarks(frame, hand_landmarks, self.mp_hands.HAND_CONNECTIONS)
 
-        # Save gestures to history (limit to last 50 entries)
+        # save gestures to history (limit to last 50 entries)
         self.gesture_history.append(gestures)
         if len(self.gesture_history) > 50:
             self.gesture_history.pop(0)
