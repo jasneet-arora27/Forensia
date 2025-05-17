@@ -101,7 +101,7 @@ class ReportGenerator:
                 """
             
             # call Gemini API with the prompt and raw session data
-            model = genai.GenerativeModel('gemini-1.5-pro')
+            model = genai.GenerativeModel('gemini-1.5-flash')
             response = model.generate_content(f"{prompt}\n\n{json.dumps(session_data)}")
             
             # save the report with UTF-8 encoding to handle all Unicode characters
