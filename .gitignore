@@ -1,17 +1,59 @@
-# Ignore Python bytecode and cache
+# Python backend ignores
 __pycache__/
 *.py[cod]
 *.so
-
-# Ignore virtual environments
 venv/
 
-# Ignore VS Code settings
+# IDE and editor files
 .vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
 
-# Ignore OS-specific files
+# OS specific files
 .DS_Store
 Thumbs.db
 
-# Ignore environment variables
+# Environment variables
 backend/.env
+.env
+.env.*
+!.env.example
+
+# Frontend specific ignores
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Production build files
+/dist/
+/build/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Testing
+/coverage/
+
+# TypeScript
+*.tsbuildinfo
+
+# Vite
+.vite/
+
+# Temporary files
+.temp/
+.tmp/
+.cache/
+
+# Local files
+*.local
