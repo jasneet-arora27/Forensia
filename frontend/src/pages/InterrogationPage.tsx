@@ -8,6 +8,7 @@ import {
   endSession,
   saveFrame,
   EmotionData,
+  GestureData,
 } from "../services/forensiaApi";
 
 const InterrogationPage: React.FC = () => {
@@ -23,6 +24,7 @@ const InterrogationPage: React.FC = () => {
     "checking" | "online" | "offline"
   >("checking");
   const [errorMessage] = useState<string | null>(null);
+  const [gestures, setGestures] = useState<GestureData[]>([]);
 
   // Check server connection on component mount
   useEffect(() => {
@@ -34,7 +36,6 @@ const InterrogationPage: React.FC = () => {
       // Simple fetch to check if server is reachable
       const response = await fetch("http://localhost:5000/api/sessions", {
         method: "GET",
-        // Add headers to handle CORS preflight requests
         headers: {
           Accept: "application/json",
         },
@@ -133,9 +134,9 @@ const InterrogationPage: React.FC = () => {
       // Request higher quality video for better face detection
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
-          width: { ideal: 1280 }, // Higher resolution for better face detection
+          width: { ideal: 1280 },
           height: { ideal: 720 },
-          facingMode: "user", // Use front camera on mobile
+          facingMode: "user",
         },
       });
 
@@ -152,12 +153,10 @@ const InterrogationPage: React.FC = () => {
           return reject("Video element not available");
         }
 
-        // Set a timeout in case video never loads
         const timeoutId = setTimeout(() => {
           reject("Video initialization timed out");
         }, 10000);
 
-        // Handle metadata loaded
         videoRef.current.onloadedmetadata = () => {
           if (!videoRef.current) {
             clearTimeout(timeoutId);
@@ -186,7 +185,7 @@ const InterrogationPage: React.FC = () => {
 
       console.log("Video playing, starting analysis loop");
       // Start the analysis loop
-      analyzeVideoFrame(); // Start the loop directly instead of using requestAnimationFrame
+      analyzeVideoFrame();
     } catch (err) {
       console.error("Error accessing camera:", err);
       alert(
@@ -194,7 +193,7 @@ const InterrogationPage: React.FC = () => {
           err instanceof Error ? err.message : String(err)
         }`
       );
-      setAnalyzing(false); // Ensure analyzing state is reset
+      setAnalyzing(false);
     }
   };
 
@@ -212,132 +211,87 @@ const InterrogationPage: React.FC = () => {
     }
   };
 
-  // Analyze the current video frame
-  const analyzeVideoFrame = () => {
-    console.log("Starting analysis frame cycle");
-
-    if (!analyzing || !sessionId || !videoRef.current || !canvasRef.current) {
-      console.log("Analysis stopped - missing dependencies");
-      return;
-    }
-
+  const captureCurrentFrame = (): string | null => {
+    if (!videoRef.current || !canvasRef.current) return null;
     const video = videoRef.current;
     const canvas = canvasRef.current;
     const context = canvas.getContext("2d");
+    if (!context) return null;
 
-    if (!context) {
-      console.error("Failed to get canvas context");
-      return;
-    }
+    const targetWidth = 640;
+    const aspectRatio = video.videoWidth / video.videoHeight;
+    canvas.width = targetWidth;
+    canvas.height = targetWidth / aspectRatio;
+    context.translate(canvas.width, 0);
+    context.scale(-1, 1);
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-    // Check if video has actual dimensions and is playing
-    if (video.videoWidth === 0 || video.videoHeight === 0 || video.paused) {
-      console.log("Video not fully initialized yet, waiting...");
-      const loop = requestAnimationFrame(analyzeVideoFrame);
-      setAnalysisLoop(loop);
-      return;
-    }
-
-    try {
-      // Set canvas dimensions to match video but reduce size for better transmission
-      // DeepFace works better with smaller, focused images
-      const targetWidth = 640; // Standard webcam resolution, good balance for face detection
-
-      // Calculate aspect ratio to maintain proportions
-      const aspectRatio = video.videoWidth / video.videoHeight;
-
-      // Set canvas size to our target dimensions
-      canvas.width = targetWidth;
-      canvas.height = targetWidth / aspectRatio;
-
-      // Clear the canvas
-      context.clearRect(0, 0, canvas.width, canvas.height);
-
-      // CRITICAL: Draw the video frame without filters first
-      context.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-      // Get the frame data as base64 with moderate quality (0.8 is a good balance)
-      // Higher quality (1.0) creates too large files, lower quality loses facial details
-      const frameData = canvas.toDataURL("image/jpeg", 0.8);
-
-      console.log(
-        "Frame captured, size:",
-        Math.round(frameData.length / 1024),
-        "KB"
-      );
-
-      // Send frame for analysis
-      const doAnalysis = async () => {
-        if (!analyzing || !sessionId) return;
-
-        try {
-          console.log(`Sending frame for analysis, session: ${sessionId}`);
-          const result = await analyzeFrame(sessionId, frameData);
-
-          if (!analyzing) return;
-
-          if (result.success) {
-            console.log("Analysis result received:", {
-              faceDetected: result.face_detected,
-              emotion: result.emotion?.dominant || "none",
-            });
-            setEmotion(result.emotion);
-            setFaceDetected(result.face_detected);
-          } else {
-            console.warn("Analysis returned error:", result.error);
-          }
-        } catch (error) {
-          console.error("Error during frame analysis:", error);
-        }
-      };
-
-      // Start analysis
-      doAnalysis();
-
-      // Schedule next frame with a 1500ms delay (matching backend's processing capabilities)
-      setTimeout(() => {
-        if (analyzing) {
-          console.log("Scheduling next analysis frame");
-          const loop = requestAnimationFrame(analyzeVideoFrame);
-          setAnalysisLoop(loop);
-        }
-      }, 1500);
-    } catch (error) {
-      console.error("Critical error in frame capture:", error);
-
-      setTimeout(() => {
-        if (analyzing) {
-          const loop = requestAnimationFrame(analyzeVideoFrame);
-          setAnalysisLoop(loop);
-        }
-      }, 2000);
-    }
+    return canvas.toDataURL("image/jpeg", 0.9);
   };
 
-  // Save the current frame
-  const saveCurrentFrame = async () => {
+  const analyzeVideoFrame = () => {
     if (!analyzing || !sessionId) return;
 
+    const frameData = captureCurrentFrame();
+    if (!frameData) return;
+
+    const doAnalysis = async () => {
+      try {
+        const result = await analyzeFrame(sessionId!, frameData);
+        if (result.success) {
+          setEmotion(result.emotion);
+          setFaceDetected(result.face_detected);
+          setEmotion(result.emotion);
+          setGestures(result.gestures);
+          setGestures(result.gestures);
+        } else {
+          console.error("Analysis failed:", result.error);
+        }
+      } catch (error) {
+        console.error("Error during frame analysis:", error);
+      }
+    };
+
+    doAnalysis();
+
+    setTimeout(() => {
+      if (analyzing) {
+        const loop = requestAnimationFrame(analyzeVideoFrame);
+        setAnalysisLoop(loop);
+      }
+    }, 1500);
+  };
+
+  // ✅ Updated function with image saving
+  const saveCurrentFrame = async () => {
+    if (!analyzing || !sessionId) return;
+    const frameData = captureCurrentFrame();
+    if (!frameData) return;
+
+
     try {
-      // Create default empty emotion data if none exists
-      const emptyEmotion = { dominant: null, scores: {} };
-
-      const result = await saveFrame(sessionId, {
-        emotion: emotion || emptyEmotion, // Use emotion if available, otherwise use empty data
-        gestures: [],
-        timestamp: Date.now() / 1000, // Current time in seconds
-        face_detected: faceDetected,
-        time_str: new Date().toISOString(),
-      });
-
-      if (result.success) {
-        setFramesSaved((prev) => prev + 1);
-        console.log("Frame saved successfully");
+      const analysisResult = await analyzeFrame(sessionId, frameData);
+      if (analysisResult.success) {
+        const analysisData = {
+          emotion: analysisResult.emotion,
+          gestures: analysisResult.gestures,
+          timestamp: Date.now() / 1000,
+          face_detected: analysisResult.face_detected,
+          time_str: new Date().toISOString(),
+          image: frameData, // ✅ include image in saved data
+        };
+        const result = await saveFrame(sessionId, analysisData);
+        if (result.success) {
+          setFramesSaved((prev) => prev + 1);
+          console.log("✅ Frame saved:", result);
+        } else {
+          console.error("Error saving frame:", result.error);
+        }
       } else {
-        console.error("Error saving frame:", result.error);
+        console.error("Analysis failed:", analysisResult.error);
       }
     } catch (error) {
-      console.error("Error saving frame:", error);
+      console.error("Error in saveCurrentFrame:", error);
     }
   };
 
@@ -385,17 +339,13 @@ const InterrogationPage: React.FC = () => {
                 className="w-full h-auto border-2 border-gray-700 rounded bg-gray-900"
                 style={{
                   minHeight: "300px",
-                  transform: "scaleX(-1)", // Mirror the video so it works like a mirror
+                  transform: "scaleX(-1)",
                 }}
                 autoPlay
                 muted
                 playsInline
               />
-
-              {/* Hidden canvas for processing */}
               <canvas ref={canvasRef} className="hidden" />
-
-              {/* Overlay status indicator */}
               {analyzing && (
                 <div className="absolute top-2 right-2 px-2 py-1 bg-blue-600 text-white text-sm rounded">
                   Analyzing...
@@ -432,14 +382,12 @@ const InterrogationPage: React.FC = () => {
             {/* Emotion Analysis */}
             <div className="bg-slate-700 p-4 rounded">
               <h2 className="text-xl font-semibold mb-3">Emotion Analysis</h2>
-
               {emotion && emotion.dominant ? (
                 <>
                   <div className="mb-2 text-lg">
                     <span className="font-medium">Dominant:</span>{" "}
                     {emotion.dominant}
                   </div>
-
                   <div className="space-y-2">
                     {Object.entries(emotion.scores || {}).map(
                       ([key, value]) => (
@@ -471,13 +419,11 @@ const InterrogationPage: React.FC = () => {
             {/* Session Info */}
             <div className="bg-slate-700 p-4 rounded">
               <h2 className="text-xl font-semibold mb-3">Session Info</h2>
-
               <div className="space-y-2">
                 <div className="flex justify-between">
                   <span>Session ID:</span>
                   <span className="font-mono">{sessionId || "N/A"}</span>
                 </div>
-
                 <div className="flex justify-between">
                   <span>Status:</span>
                   <span
@@ -486,7 +432,6 @@ const InterrogationPage: React.FC = () => {
                     {analyzing ? "Active" : "Inactive"}
                   </span>
                 </div>
-
                 <div className="flex justify-between">
                   <span>Face Detected:</span>
                   <span
@@ -495,12 +440,10 @@ const InterrogationPage: React.FC = () => {
                     {faceDetected ? "Yes" : "No"}
                   </span>
                 </div>
-
                 <div className="flex justify-between">
                   <span>Frames Saved:</span>
                   <span>{framesSaved}</span>
                 </div>
-
                 <div className="flex justify-between">
                   <span>Server Status:</span>
                   <span
@@ -534,8 +477,6 @@ const InterrogationPage: React.FC = () => {
                   <li>Ensure nothing is covering your face</li>
                 </ul>
               </div>
-
-              {/* Visual face position guide */}
               <div
                 className="relative mt-4 mx-auto"
                 style={{ width: "200px", height: "200px" }}

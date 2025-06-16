@@ -29,7 +29,7 @@ const SignUpPage: React.FC = () => {
         navigate("/login"); // Redirect to login after successful sign-up
       } else {
         console.error("Signup failed:", data);
-        setError(data.message || "Signup failed.");
+        setError(data.error || "Signup failed.");
       }
     } catch (err) {
       console.error("Error during signup:", err);

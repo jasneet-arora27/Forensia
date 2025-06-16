@@ -1,3 +1,11 @@
+import sys
+import os
+
+# get the absolute path to the 'backend' directory
+backend_dir = os.path.dirname(os.path.abspath(__file__))
+# add backend directory's parent (the project root) to the Python path
+sys.path.insert(0, os.path.dirname(backend_dir))
+
 import cv2
 import time
 import numpy as np
@@ -43,6 +51,7 @@ class CriminalInvestigationSystem:
 
     def start_analysis(self):
         """Start investigation analysis."""
+        print("--- Starting Analysis ---")
         # create a new session
         session_file, session_start_time = self.session_manager.create_session()
 
@@ -52,6 +61,8 @@ class CriminalInvestigationSystem:
             print("Cannot open camera")
             return True
 
+        # add a delay to allow the camera to initialize
+        time.sleep(2)
         return_to_menu = False
         running = True
         frames_saved = 0
@@ -64,6 +75,11 @@ class CriminalInvestigationSystem:
             # Capture frame
             ret, frame = cap.read()
             if not ret:
+                print("--- cap.read() returned False ---")
+                # Log frame shape and save the first frame for debugging
+                if frames_saved == 0:
+                    print(f"Frame shape: {frame.shape}")
+                    cv2.imwrite("debug_frame.jpg", frame)
                 print("Can't receive frame. Exiting...")
                 break
 
@@ -155,7 +171,7 @@ class CriminalInvestigationSystem:
     
     def view_past_sessions(self):
         """View list of past sessions and allow user to select one to view details"""
-        session_files = self.session_manager.list_sessions()
+        session_.files = self.session_manager.list_sessions()
         
         if not session_files:
             print("No saved sessions found.")

@@ -5,13 +5,35 @@ import videoSrc from "../assets/videos/b11.mp4";
 const LoginPage = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
   const navigate = useNavigate();
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("Logging in with:", email, password);
-    // Normally, validate login here
-    navigate("/"); // Navigate to home
+    setError("");
+
+    try {
+      const response = await fetch("http://localhost:5000/api/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        // Store token in localStorage
+        localStorage.setItem("token", data.token);
+        navigate("/"); // Navigate to landing page after successful login
+      } else {
+        setError(data.error || "Invalid email or password");
+      }
+    } catch (err) {
+      console.error("Error during login:", err);
+      setError("Something went wrong. Please try again.");
+    }
   };
 
   return (
@@ -27,6 +49,10 @@ const LoginPage = () => {
           Login
         </h2>
 
+        {error && (
+          <div className="text-red-400 text-sm mb-4 text-center">{error}</div>
+        )}
+
         <form onSubmit={handleLogin} className="space-y-6">
           <div>
             <label htmlFor="email" className="block text-sm text-gray-300 mb-1">
@@ -35,7 +61,7 @@ const LoginPage = () => {
             <input
               type="email"
               id="email"
-              className="w-full p-3 rounded-md bg-black/20 text-white border border-gray-700 focus:outline-none"
+              className="w-full p-3 rounded-md bg-black/20 text-white border border-gray-700 focus:outline-none focus:ring-2 focus:ring-cyan-400"
               placeholder="Enter your email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -52,7 +78,7 @@ const LoginPage = () => {
             <input
               type="password"
               id="password"
-              className="w-full p-3 rounded-md bg-black/20 text-white border border-gray-700 focus:outline-none"
+              className="w-full p-3 rounded-md bg-black/20 text-white border border-gray-700 focus:outline-none focus:ring-2 focus:ring-cyan-400"
               placeholder="Enter your password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -62,7 +88,7 @@ const LoginPage = () => {
 
           <button
             type="submit"
-            className="w-full py-3 bg-gradient-to-r from-purple-500 via-blue-500 to-cyan-400 rounded-lg font-semibold hover:opacity-90"
+            className="w-full py-3 bg-gradient-to-r from-purple-500 via-blue-500 to-cyan-400 rounded-lg font-semibold hover:opacity-90 transition-all duration-300"
           >
             Log In
           </button>

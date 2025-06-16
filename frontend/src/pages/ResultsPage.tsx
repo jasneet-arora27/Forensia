@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import ReactMarkdown from "react-markdown";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
 import Background from "../components/Background";
@@ -28,13 +29,33 @@ const ResultsPage: React.FC = () => {
     }
   }, [activeTab]);
 
+  // Effect to handle initial load based on URL parameters (if any)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const sessionIdParam = params.get("session");
+    const reportIdParam = params.get("report");
+
+    if (sessionIdParam) {
+      setActiveTab("sessions");
+      // Delay viewing details slightly to allow sessions to load
+      setTimeout(() => viewDetails(sessionIdParam), 100);
+    } else if (reportIdParam) {
+      setActiveTab("reports");
+      // Delay viewing details slightly to allow reports to load
+      setTimeout(() => viewDetails(reportIdParam), 100);
+    }
+  }, []); // Run only on initial mount
+
   const loadSessions = async () => {
     try {
       setLoading(true);
       const data = await getSessions();
       setSessions(data);
-      setSelectedId(null);
-      setDetailData(null);
+      // Keep selectedId and detailData if they match the current tab
+      if (activeTab !== "sessions") {
+        setSelectedId(null);
+        setDetailData(null);
+      }
       setError(null);
     } catch (err) {
       console.error("Error loading sessions:", err);
@@ -49,8 +70,11 @@ const ResultsPage: React.FC = () => {
       setLoading(true);
       const data = await getReports();
       setReports(data);
-      setSelectedId(null);
-      setDetailData(null);
+      // Keep selectedId and detailData if they match the current tab
+      if (activeTab !== "reports") {
+        setSelectedId(null);
+        setDetailData(null);
+      }
       setError(null);
     } catch (err) {
       console.error("Error loading reports:", err);
@@ -64,18 +88,24 @@ const ResultsPage: React.FC = () => {
     try {
       setLoading(true);
       setSelectedId(id);
+      setDetailData(null); // Clear previous details
 
       if (activeTab === "sessions") {
         const result = await getSessionData(id);
         if (result.success) {
           setDetailData(result.session);
+          setError(null);
         } else {
           setError(result.error || "Failed to load session details");
         }
       } else {
+        // activeTab is "reports"
+        // Assuming getReportData fetches the JSON with { id, filename, content }
         const result = await getReportData(id);
         if (result.success) {
+          // Set the entire report object including the content string
           setDetailData(result.report);
+          setError(null);
         } else {
           setError(result.error || "Failed to load report details");
         }
@@ -97,11 +127,20 @@ const ResultsPage: React.FC = () => {
     }
   };
 
-  const formatDate = (timestamp: number) => {
-    return new Date(timestamp * 1000).toLocaleString();
+  const formatDate = (timestamp: string | number) => {
+    if (!timestamp) return "N/A";
+
+    const date = new Date(typeof timestamp === 'string' ? timestamp : timestamp * 1000);
+
+    if (isNaN(date.getTime())) {
+        return "Invalid Date";
+    }
+
+    return date.toLocaleString();
   };
 
   const formatDuration = (seconds: number) => {
+    if (seconds === undefined || seconds === null) return "N/A";
     const minutes = Math.floor(seconds / 60);
     const remainingSeconds = Math.floor(seconds % 60);
     return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
@@ -147,6 +186,7 @@ const ResultsPage: React.FC = () => {
             <div className="text-red-400 py-4">{error}</div>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Left Pane: List of Sessions or Reports */}
               <div className="lg:col-span-1 overflow-auto max-h-[70vh]">
                 <h2 className="text-xl font-semibold mb-4">
                   {activeTab === "sessions"
@@ -212,6 +252,7 @@ const ResultsPage: React.FC = () => {
                 )}
               </div>
 
+              {/* Right Pane: Details */}
               <div className="lg:col-span-2 bg-slate-700 p-4 rounded overflow-auto max-h-[70vh]">
                 {loading && detailData ? (
                   <div className="text-center py-8">Loading details...</div>
@@ -225,6 +266,7 @@ const ResultsPage: React.FC = () => {
 
                     {activeTab === "sessions" && (
                       <div>
+                        {/* Session details rendering */}
                         <div className="mb-4 grid grid-cols-2 gap-4">
                           <div>
                             <div className="font-semibold">Start Time:</div>
@@ -268,6 +310,7 @@ const ResultsPage: React.FC = () => {
                                     <th className="text-left py-2">#</th>
                                     <th className="text-left py-2">Time</th>
                                     <th className="text-left py-2">Emotion</th>
+                                    {/* Add Gesture column header if needed */}
                                   </tr>
                                 </thead>
                                 <tbody>
@@ -280,11 +323,17 @@ const ResultsPage: React.FC = () => {
                                         <td className="py-2">{idx + 1}</td>
                                         <td className="py-2">
                                           {frame.time_str ||
-                                            formatDuration(frame.timestamp)}
+                                            formatDate(frame.timestamp)}
                                         </td>
                                         <td className="py-2">
                                           {frame.emotion?.dominant || "N/A"}
                                         </td>
+                                        {/* Display gestures if available */}
+                                        {/* <td className="py-2">
+                                          {frame.gestures && frame.gestures.length > 0
+                                            ? frame.gestures.map((g: any) => g.gesture).join(', ')
+                                            : 'N/A'}
+                                        </td> */}
                                       </tr>
                                     )
                                   )}
@@ -296,29 +345,13 @@ const ResultsPage: React.FC = () => {
                     )}
 
                     {activeTab === "reports" && (
-                      <div className="whitespace-pre-wrap">
-                        {typeof detailData.content === "string" ? (
-                          <div>{detailData.content}</div>
+                      // Use ReactMarkdown to render the report content
+                      <div className="prose prose-invert max-w-none">
+                        {/* detailData.content should be the markdown string */}
+                        {detailData.content ? (
+                          <ReactMarkdown>{detailData.content}</ReactMarkdown>
                         ) : (
-                          <div>
-                            {Array.isArray(detailData.content.sections) &&
-                              detailData.content.sections.map(
-                                (section: any, idx: number) => (
-                                  <div key={idx} className="mb-6">
-                                    <h3 className="text-lg font-semibold mb-2">
-                                      {section.title}
-                                    </h3>
-                                    <div>{section.content}</div>
-                                  </div>
-                                )
-                              )}
-
-                            {!Array.isArray(detailData.content.sections) && (
-                              <pre className="overflow-x-auto text-sm">
-                                {JSON.stringify(detailData.content, null, 2)}
-                              </pre>
-                            )}
-                          </div>
+                          <p>No report content available.</p>
                         )}
                       </div>
                     )}

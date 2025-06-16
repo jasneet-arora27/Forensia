@@ -1,23 +1,27 @@
-import os
-import json
-import time
-import base64
-import cv2
-import numpy as np
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from datetime import datetime
+import time
+
 from dotenv import load_dotenv
+from functools import wraps
+import os
+import json
+import base64
+import cv2
+import numpy as np
 
 # import existing classes from app
 from app.analyzers import EmotionAnalyzer, FaceAnalyzer, GestureAnalyzer
 from app.managers import SessionManager, ReportManager
+from app.auth import signup, login, verify_token
 
 # load environment variables
 load_dotenv()
 
 # initialize Flask app
 app = Flask(__name__)
+app.url_map.strict_slashes = False
 CORS(app)  # enable CORS for all routes
 
 # initialize analyzers and managers
@@ -29,6 +33,46 @@ report_manager = ReportManager()
 
 # store active sessions
 active_sessions = {}
+
+# load existing sessions from disk
+def load_existing_sessions():
+    session_dir = "session_data"  # Update this path if needed
+    if not os.path.exists(session_dir):
+        os.makedirs(session_dir)
+        
+    loaded_count = 0
+    for filename in os.listdir(session_dir):
+        if filename.startswith("session_") and filename.endswith(".json"):
+            try:
+                session_id = filename.replace("session_", "").replace(".json", "")
+                with open(os.path.join(session_dir, filename), 'r') as f:
+                    session_data = json.load(f)
+                    
+                active_sessions[session_id] = {
+                    "start_time": float(time.mktime(datetime.strptime(
+                        session_data.get("start_time"), 
+                        "%Y-%m-%d %H:%M:%S"
+                    ).timetuple())) if isinstance(session_data.get("start_time"), str) else session_data.get("start_time"),
+                    "frames": session_data.get("frames", []),
+                    "data": session_data
+                }
+                loaded_count += 1
+            except Exception as e:
+                print(f"Error loading session {filename}: {str(e)}")
+    
+    print(f"Loaded {loaded_count} existing sessions from disk")
+
+# load sessions at startup
+load_existing_sessions()
+
+def require_auth(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        user_id = verify_token()
+        if not user_id:
+            return jsonify({'error': 'Authentication required'}), 401
+        return f(*args, **kwargs)
+    return decorated
 
 @app.route('/api/sessions/start', methods=['POST'])
 def start_session():
@@ -101,7 +145,12 @@ def analyze_frame(session_id):
                 'scores': emotion_scores if emotion and emotion != "Unknown" else {}
             },
             'face_detected': face_detected,
-            'gestures': gestures if gestures else [],
+            'gestures': [
+                {
+                    'type': gesture['type'],
+                    'landmarks': gesture['landmarks']
+                } for gesture in (gestures if gestures else [])
+            ],
             'timestamp': current_time - session_info['start_time'],
             'time_str': f"{int((current_time - session_info['start_time']) // 60):02d}:{int((current_time - session_info['start_time']) % 60):02d}"
         }
@@ -231,15 +280,17 @@ def get_session_data(session_id):
 def list_reports():
     """List all available reports"""
     try:
-        reports = [f for f in os.listdir(report_manager.reports_dir) if f.endswith('.json')]
-        
+        # Look for files ending with '.md'
+        reports = [f for f in os.listdir(report_manager.reports_dir) if f.endswith('.md')]
+
         # get report details
         report_details = []
         for report_file in reports:
             try:
-                report_id = report_file.replace('report_', '').replace('.json', '')
-                
-                # check if corresponding session exists
+                # Extract report_id assuming filename format is 'report_<id>.md'
+                report_id = report_file.replace('report_', '').replace('.md', '')
+
+                # check if corresponding session exists (still based on JSON session file)
                 session_file = f"session_{report_id}.json"
                 session_path = os.path.join(session_manager.data_dir, session_file)
                 
@@ -259,8 +310,9 @@ def list_reports():
                     'session_info': session_info
                 })
             except Exception as e:
-                print(f"Error reading report file {report_file}: {e}")
-        
+                # Log the error but continue processing other files
+                print(f"Error processing report file {report_file}: {e}")
+
         return jsonify({
             'success': True,
             'reports': report_details
@@ -272,25 +324,40 @@ def list_reports():
 def get_report_data(report_id):
     """Get content of a specific report"""
     try:
-        report_file = f"report_{report_id}.json"
+        # Expect the report file to have a .md extension
+        report_file = f"report_{report_id}.md"
         filepath = os.path.join(report_manager.reports_dir, report_file)
         
         if not os.path.exists(filepath):
             return jsonify({'success': False, 'error': 'Report not found'}), 404
-        
+
+        # Read the content of the .md file as plain text
         with open(filepath, 'r', encoding='utf-8') as f:
-            report_data = json.load(f)
-        
+            report_content = f.read()
+
         return jsonify({
             'success': True,
             'report': {
                 'id': report_id,
                 'filename': report_file,
-                'content': report_data
+                'content': report_content # Return the text content
             }
         })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/auth/signup', methods=['POST'])
+def handle_signup():
+    return signup()
+
+@app.route('/api/auth/login', methods=['POST'])
+def handle_login():
+    return login()
+
+@app.route('/api/protected', methods=['GET'])
+@require_auth
+def protected():
+    return jsonify({'message': 'This is a protected route'}), 200
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)

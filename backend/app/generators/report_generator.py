@@ -28,6 +28,7 @@ class ReportGenerator:
     
     def generate_report(self, session_file, prompt=None):
         """Generate a report from session data using Gemini API
+
         
         Args:
             session_file (str): Path to the session data JSON file
@@ -49,13 +50,14 @@ class ReportGenerator:
             
             # create report filename based on session filename
             session_filename = os.path.basename(session_file)
-            report_filename = session_filename.replace('session_', 'report_')
+            # Change the extension to .md
+            report_filename = session_filename.replace('session_', 'report_').replace('.json', '.md')
             report_file = os.path.join(self.reports_dir, report_filename)
             
             # use default prompt if none provided
             if not prompt:
                 prompt = """
-                Conduct a comprehensive forensic behavioral analysis based on the provided interview session data. 
+                Conduct a comprehensive forensic behavioral analysis based on the provided interview session data.
                 
                 Your forensic report should include:
                 
@@ -92,19 +94,22 @@ class ReportGenerator:
                    - Topics that warrant further exploration
                    - Interview strategy recommendations for future sessions
                    - Areas where additional evidence might be needed
+
                 
                 7. METHODOLOGICAL LIMITATIONS:
                    - Acknowledge limitations of the analysis
                    - Confidence level in findings
+
                 
                 Format the report professionally with clear section headers, timestamps where relevant, and evidence-based conclusions.
                 """
             
             # call Gemini API with the prompt and raw session data
             model = genai.GenerativeModel('gemini-1.5-flash')
-            response = model.generate_content(f"{prompt}\n\n{json.dumps(session_data)}")
+            response = model.generate_content(f"{prompt}\n\nSession Start Time: {session_data.get('start_time')}\nSession End Time: {session_data.get('end_time')}\n\n{json.dumps(session_data)}")
             
             # save the report with UTF-8 encoding to handle all Unicode characters
+            # Write the raw text content to the .md file
             with open(report_file, 'w', encoding='utf-8') as file:
                 file.write(response.text)
                 
