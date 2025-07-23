@@ -1,11 +1,11 @@
-# Use full Python 3.9 image (better compatibility with mediapipe)
+# Use Python 3.9 base image for mediapipe compatibility
 FROM python:3.9
 
-# Set environment variables
+# Disable .pyc files and enable unbuffered logging
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# Install system packages required by mediapipe, OpenCV, DeepFace, etc.
+# Install system libraries required by mediapipe, OpenCV, DeepFace, etc.
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     libsm6 \
@@ -18,21 +18,20 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Set working directory inside container
+# Set working directory
 WORKDIR /app
 
 # Copy backend code into the container
 COPY backend/ /app
 
-# Upgrade pip and install Python build tools
+# Upgrade pip and install build tools
 RUN pip install --upgrade pip setuptools wheel
 
-# ✅ Install mediapipe from official prebuilt wheel (avoids pip source build)
-RUN pip install https://github.com/google/mediapipe/releases/download/v0.10.9/mediapipe-0.10.9-cp39-cp39-manylinux2014_x86_64.whl
+# Install Python dependencies (including mediapipe 0.10.21)
+RUN pip install --no-cache-dir -r requirements.txt
 
-
-# Expose port (Flask default)
+# Expose Flask port
 EXPOSE 5000
 
-# Run your Flask app
+# Start your Flask app
 CMD ["python", "app.py"]
